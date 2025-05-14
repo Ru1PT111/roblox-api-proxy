@@ -20,11 +20,8 @@ function loadUniverseIds() {
 
 async function fetchGameData(universeIds) {
   try {
-    const response = await axios.post(
-      'https://games.roblox.com/v1/games',
-      { universeIds },
-      { headers: { 'Content-Type': 'application/json' } }
-    );
+    const url = `https://games.roblox.com/v1/games?universeIds=${universeIds.join(',')}`;
+    const response = await axios.get(url);
     return response.data.data || [];
   } catch (err) {
     console.error('Failed to fetch game data:', err.message);
