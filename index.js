@@ -9,7 +9,7 @@ let cachedGames = [];
 let cachedIcons = {};
 
 function loadUniverseIds() {
-  const filePath = path.join(__dirname, 'ids.txt');
+  const filePath = path.join(__dirname, 'universe_ids.txt');
   const content = fs.readFileSync(filePath, 'utf8');
 
   return content
