@@ -1,65 +1,78 @@
 const express = require('express');
-const axios = require('axios');
 const fs = require('fs');
-const NodeCache = require('node-cache');
+const path = require('path');
+const axios = require('axios');
 
 const app = express();
-const cache = new NodeCache({ stdTTL: 3600 });
+const PORT = process.env.PORT || 3000;
+let cachedGames = [];
+let cachedIcons = {};
 
-// ✅ Load universe IDs from ids.txt
-const loadUniverseIds = () => {
+function loadUniverseIds() {
+  const filePath = path.join(__dirname, 'ids.txt');
+  const content = fs.readFileSync(filePath, 'utf8');
+
+  return content
+    .split('\n')
+    .map(line => line.trim().split(' - ')[0])
+    .filter(id => id && !isNaN(id));
+}
+
+async function fetchGameData(universeIds) {
   try {
-    const file = fs.readFileSync('ids.txt', 'utf8');
-    return file
-      .split('\n')
-      .map(line => parseInt(line.trim()))
-      .filter(id => !isNaN(id));
+    const response = await axios.post(
+      'https://games.roblox.com/v1/games',
+      { universeIds },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+    return response.data.data || [];
   } catch (err) {
-    console.error('Failed to read ids.txt:', err);
+    console.error('Failed to fetch game data:', err.message);
     return [];
   }
-};
+}
 
-let universeIds = loadUniverseIds();
-
-const fetchGameData = async (universeId) => {
+async function fetchGameIcons(universeIds) {
   try {
-    const response = await axios.get(`https://games.roblox.com/v1/games?universeIds=${universeId}`);
-    const iconResponse = await axios.get(`https://thumbnails.roblox.com/v1/games/icons?universeIds=${universeId}&size=512x512&format=Png&isCircular=false`);
-    
-    return {
-      game: response.data.data?.[0] || null,
-      icon: iconResponse.data.data?.[0]?.imageUrl || null
-    };
+    const response = await axios.get(
+      `https://thumbnails.roblox.com/v1/games/icons?universeIds=${universeIds.join(',')}&size=512x512&format=Png&isCircular=false`
+    );
+    const icons = {};
+    (response.data.data || []).forEach(icon => {
+      icons[icon.targetId] = icon.imageUrl;
+    });
+    return icons;
   } catch (err) {
-    console.error(`Failed to fetch for universeId ${universeId}:`, err.message);
-    return null;
+    console.error('Failed to fetch game icons:', err.message);
+    return {};
   }
-};
+}
 
-const refreshCache = async () => {
-  console.log('Refreshing cache...');
-  universeIds = loadUniverseIds(); // reload in case ids.txt changed
-  for (const id of universeIds) {
-    const data = await fetchGameData(id);
-    if (data) {
-      cache.set(id, data);
-    }
-  }
-  console.log('Cache updated.');
-};
+async function updateCache() {
+  const universeIds = loadUniverseIds();
+  console.log('Updating cache for', universeIds.length, 'games...');
+
+  const [gameData, icons] = await Promise.all([
+    fetchGameData(universeIds),
+    fetchGameIcons(universeIds),
+  ]);
+
+  cachedGames = gameData;
+  cachedIcons = icons;
+  console.log('Cache updated:', new Date().toLocaleTimeString());
+}
 
 app.get('/games', (req, res) => {
-  const result = universeIds.map(id => ({
-    universeId: id,
-    ...cache.get(id)
-  })).filter(entry => entry.game !== null);
-  res.json({ status: 200, data: result });
+  res.json({
+    status: 200,
+    data: cachedGames,
+    icons: cachedIcons,
+  });
 });
 
-const PORT = process.env.PORT || 3000;
+// Start server
 app.listen(PORT, async () => {
   console.log(`Server running on port ${PORT}`);
-  await refreshCache();
-  setInterval(refreshCache, 5 * 60 * 1000);
+  await updateCache(); // First load immediately
+  setInterval(updateCache, 5 * 60 * 1000); // Every 5 minutes
 });
