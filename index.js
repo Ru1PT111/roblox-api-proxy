@@ -1,9 +1,12 @@
 const express = require('express');
+const cors = require('cors'); // ← add this
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 
 const app = express();
+app.use(cors());
+
 const PORT = process.env.PORT || 3000;
 let cachedGames = [];
 let cachedIcons = {};
